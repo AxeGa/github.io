@@ -348,14 +348,24 @@
       animation: bannerIn .45s cubic-bezier(.34,1.56,.64,1);
     }
 
-    .bingo-banner.visible { display: block; }
+.bingo-banner.visible { display: block; }
 
-    @keyframes bannerIn {
-      from { transform: scale(.8) translateY(-8px); opacity: 0; }
-      to   { transform: scale(1) translateY(0); opacity: 1; }
-    }
+@keyframes bannerIn {
+  from { transform: scale(.8) translateY(-8px); opacity: 0; }
+  to   { transform: scale(1) translateY(0); opacity: 1; }
+}
 
-    .banner-main {
+.bingo-banner.full-card {
+  animation: bannerIn .45s cubic-bezier(.34,1.56,.64,1), fc-pulse 1.5s ease-in-out infinite;
+  box-shadow: 0 6px 28px rgba(253,187,49,.5), 0 2px 8px rgba(0,0,0,.1);
+}
+
+@keyframes fc-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+}
+
+.banner-main {
       font-family: var(--font-h);
       font-size: 2.25rem;
       font-weight: 900;
@@ -1074,6 +1084,24 @@ let markedSquares = new Array(16).fill(false);
 let squares       = [...(getSavedSquares() || DEFAULT_SQUARES)];
 let tapCount      = 0;
 let tapTimer      = null;
+let bannerTimer   = null;
+
+function calculateScore(marked) {
+  const c = marked.filter(Boolean).length;
+  const lines = [
+    [0,1,2,3],[4,5,6,7],[8,9,10,11],[12,13,14,15],
+    [0,4,8,12],[1,5,9,13],[2,6,10,14],[3,7,11,15],
+    [0,5,10,15],[3,6,9,12]
+  ];
+  const b = lines.filter(l => l.every(i => marked[i])).length;
+  return c * 1 + b * 5 + (c === 16 ? 20 : 0);
+}
+
+function dismissBanner() {
+  const b = document.getElementById("bingo-banner");
+  b.classList.remove("visible", "full-card");
+  if (bannerTimer) { clearTimeout(bannerTimer); bannerTimer = null; }
+}
 
 // ─── VIEW ROUTING ──────────────────────────────────────────
 function showView(name) {
@@ -1147,7 +1175,8 @@ function toggleCell(index, cellEl) {
   markedSquares[index] = !markedSquares[index];
 
   const hasBingo = checkBingo();
-  const score    = markedSquares.filter(Boolean).length;
+  const fullCard = markedSquares.every(Boolean);
+  const score    = calculateScore(markedSquares);
 
   saveTeam(teamId, { name: teamName, marked: markedSquares, hasBingo, score });
 
@@ -1160,11 +1189,21 @@ function toggleCell(index, cellEl) {
     newCell.addEventListener("animationend", () => newCell.classList.remove("pop"), { once: true });
   }
 
+  const banner = document.getElementById("bingo-banner");
   if (hasBingo) {
-    document.getElementById("bingo-banner").classList.add("visible");
-    launchConfetti();
+    if (fullCard) {
+      banner.innerHTML = `<div class="banner-main">&#127881; FULL CARD! &#127881;</div><div class="banner-sub">Ett lag</div>`;
+      banner.className = "bingo-banner visible full-card";
+      launchFullCardConfetti();
+    } else {
+      banner.innerHTML = `<div class="banner-main">&#127942; BINGO! &#127942;</div><div class="banner-sub">Gjør det rette</div>`;
+      banner.className = "bingo-banner visible";
+      launchConfetti();
+    }
+    clearTimeout(bannerTimer);
+    bannerTimer = setTimeout(dismissBanner, fullCard ? 8000 : 5000);
   } else {
-    document.getElementById("bingo-banner").classList.remove("visible");
+    dismissBanner();
   }
 }
 
@@ -1211,6 +1250,27 @@ function launchConfetti() {
       border-radius:${Math.random()>.6?"50%":"2px"};
       animation-delay:${Math.random()*1.8}s;
       animation-duration:${2.2+Math.random()*2}s;
+    `;
+    wrap.appendChild(el);
+    el.addEventListener("animationend", () => el.remove());
+  }
+}
+
+function launchFullCardConfetti() {
+  const wrap   = document.getElementById("confetti-wrap");
+  const colors = ["#fdbb31","#007272","#ffffff","#a5e1d2","#00343e","#e9f8f4","#c99200","#14555a"];
+  for (let n = 0; n < 160; n++) {
+    const el = document.createElement("div");
+    el.className = "cp";
+    const size = 6 + Math.random() * 16;
+    const isStar = Math.random() > .8;
+    el.style.cssText = `
+      left:${Math.random()*100}%;top:-20px;
+      width:${size}px;height:${isStar ? size : size*(Math.random()>.5?1:.4)}px;
+      background:${colors[Math.floor(Math.random()*colors.length)]};
+      border-radius:${isStar ? "50%" : "2px"};
+      animation-delay:${Math.random()*3}s;
+      animation-duration:${2.5+Math.random()*3.5}s;
     `;
     wrap.appendChild(el);
     el.addEventListener("animationend", () => el.remove());
@@ -1292,7 +1352,7 @@ function loadStats() {
   teams.sort((a, b) => (b.score || 0) - (a.score || 0) || (a.name || "").localeCompare(b.name || "", "sv"));
 
   card.innerHTML = `<table>
-    <thead><tr><th>#</th><th>Team</th><th>Squares</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>#</th><th>Team</th><th>Squares</th><th>Score</th><th>Status</th><th></th></tr></thead>
     <tbody>${teams.map((t, i) => {
       const cnt = (t.marked || []).filter(Boolean).length;
       return `<tr>
@@ -1304,6 +1364,7 @@ function loadStats() {
             <span class="mini-lbl">${cnt}/16</span>
           </div>
         </td>
+        <td><strong>${t.score || 0}</strong></td>
         <td>${t.hasBingo ? '<span class="badge-bingo">BINGO</span>' : '<span style="color:var(--gr200)">–</span>'}</td>
         <td><button class="btn-del" data-key="${esc(t.storageKey)}">Remove</button></td>
       </tr>`;
