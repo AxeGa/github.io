@@ -1202,7 +1202,7 @@ function toggleCell(index, cellEl) {
       launchConfetti();
     }
     clearTimeout(bannerTimer);
-    bannerTimer = setTimeout(dismissBanner, fullCard ? 8000 : 5000);
+    bannerTimer = setTimeout(dismissBanner, fullCard ? 8000 : 3000);
   } else {
     dismissBanner();
   }
