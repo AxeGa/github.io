@@ -1085,6 +1085,7 @@ let squares       = [...(getSavedSquares() || DEFAULT_SQUARES)];
 let tapCount      = 0;
 let tapTimer      = null;
 let bannerTimer   = null;
+let statsTimer    = null;
 
 function calculateScore(marked) {
   const c = marked.filter(Boolean).length;
@@ -1409,7 +1410,14 @@ document.querySelectorAll(".nav-tab").forEach(tab => {
     document.querySelectorAll(".admin-panel").forEach(p => p.classList.remove("active"));
     tab.classList.add("active");
     document.getElementById("panel-" + tab.dataset.tab).classList.add("active");
-    if (tab.dataset.tab === "stats") loadStats();
+    if (tab.dataset.tab === "stats") {
+      loadStats();
+      clearInterval(statsTimer);
+      statsTimer = setInterval(loadStats, 3000);
+    } else {
+      clearInterval(statsTimer);
+      statsTimer = null;
+    }
   });
 });
 
@@ -1417,6 +1425,8 @@ document.getElementById("btn-back").addEventListener("click", () => {
   showView(teamName ? "bingo" : "home");
   document.querySelectorAll(".nav-tab").forEach((t, i) => t.classList.toggle("active", i === 0));
   document.querySelectorAll(".admin-panel").forEach((p, i) => p.classList.toggle("active", i === 0));
+  clearInterval(statsTimer);
+  statsTimer = null;
 });
 
 // ─── UTILITIES ─────────────────────────────────────────────
