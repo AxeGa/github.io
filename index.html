@@ -1023,26 +1023,27 @@ const ADMIN_CODE = "axga";
    ⛳ DEFAULT SQUARES (can be changed via admin)
    ════════════════════════════════════════════════════════════ */
 const DEFAULT_SQUARES = [
-  "Hit it in the bunker",
-  "Missed a short putt (under 1m)",
-  "Out of bounds – ball never found",
-  "Three putts or more on a hole",
-  "Hit the water hazard",
-  "Birdie or better",
-  "Hit a tree (ball came back)",
-  "Blamed the weather",
-  "Took a mulligan",
-  "Complained about the divot",
-  "Longest drive on a fairway",
-  "Last to putt on the green",
-  "Found a ball no one saw land",
-  "Forgot to count a stroke",
-  "Celebrated too early",
-  "More than 6 strokes on a par 4"
+  "Ball rolls over 30 meters",
+  "Hit a distance marker",
+  "Short shot (20-40 meters)",
+  "Land in the fake bunker",
+  "Crisp sound on impact",
+  "Land 2 balls close together",
+  "Hit a ball over 100m",
+  "Hit a fake green",
+  "Ball flies perfectly straight",
+  "Land between two targets",
+  "Group hits together on 3!",
+  "Try a brand new club",
+  "Swing using only one hand",
+  "Ball stops on a green",
+  "Hit 3 balls in 15 seconds",
+  "Hit a really high ball"
 ];
 
 const STORAGE_KEY_SQUARES = "golf-bingo-squares";
 const STORAGE_KEY_TEAM_PREFIX = "golf-bingo-team-";
+const STORAGE_KEY_CURRENT_TEAM = "golf-bingo-current-team";
 
 // ─── LOCALSTORAGE HELPERS ──────────────────────────────────
 function getSavedSquares() {
@@ -1075,6 +1076,15 @@ function getAllTeams() {
   }
   return teams;
 }
+function saveCurrentTeam(id, name) {
+  localStorage.setItem(STORAGE_KEY_CURRENT_TEAM, JSON.stringify({ id, name }));
+}
+function getCurrentTeam() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY_CURRENT_TEAM)); } catch { return null; }
+}
+function clearCurrentTeam() {
+  localStorage.removeItem(STORAGE_KEY_CURRENT_TEAM);
+}
 
 // App state
 let currentView   = "home";
@@ -1086,6 +1096,18 @@ let tapCount      = 0;
 let tapTimer      = null;
 let bannerTimer   = null;
 let statsTimer    = null;
+let celebratedLines = new Set();
+
+function getCompletedLineIndices(marked) {
+  const lines = [
+    [0,1,2,3],[4,5,6,7],[8,9,10,11],[12,13,14,15],
+    [0,4,8,12],[1,5,9,13],[2,6,10,14],[3,7,11,15],
+    [0,5,10,15],[3,6,9,12]
+  ];
+  const res = [];
+  lines.forEach((l, i) => { if (l.every(idx => marked[idx])) res.push(i); });
+  return res;
+}
 
 function calculateScore(marked) {
   const c = marked.filter(Boolean).length;
@@ -1135,12 +1157,14 @@ function startGame() {
     .replace(/å/g,"a").replace(/ä/g,"a").replace(/ö/g,"o")
     .replace(/\s+/g,"-").replace(/[^a-z0-9-]/g,"") || "team";
   teamId = baseId + "-" + Math.random().toString(36).slice(2, 6);
+  saveCurrentTeam(teamId, teamName);
   initBingo();
   showView("bingo");
 }
 
 // ─── BINGO VIEW ────────────────────────────────────────────
 function initBingo() {
+  celebratedLines.clear();
   document.getElementById("hdr-team").textContent = teamName;
   squares = [...(getSavedSquares() || DEFAULT_SQUARES)];
 
@@ -1175,9 +1199,11 @@ function renderGrid() {
 function toggleCell(index, cellEl) {
   markedSquares[index] = !markedSquares[index];
 
-  const hasBingo = checkBingo();
-  const fullCard = markedSquares.every(Boolean);
-  const score    = calculateScore(markedSquares);
+  const completed = getCompletedLineIndices(markedSquares);
+  const allMarked = markedSquares.every(Boolean);
+  const newLine   = completed.find(i => !celebratedLines.has(i));
+  const score     = calculateScore(markedSquares);
+  const hasBingo  = completed.length > 0;
 
   saveTeam(teamId, { name: teamName, marked: markedSquares, hasBingo, score });
 
@@ -1191,8 +1217,9 @@ function toggleCell(index, cellEl) {
   }
 
   const banner = document.getElementById("bingo-banner");
-  if (hasBingo) {
-    if (fullCard) {
+  if (newLine !== undefined || allMarked) {
+    completed.forEach(i => celebratedLines.add(i));
+    if (allMarked) {
       banner.innerHTML = `<div class="banner-main">&#127881; FULL CARD! &#127881;</div><div class="banner-sub">Ett lag</div>`;
       banner.className = "bingo-banner visible full-card";
       launchFullCardConfetti();
@@ -1202,8 +1229,9 @@ function toggleCell(index, cellEl) {
       launchConfetti();
     }
     clearTimeout(bannerTimer);
-    bannerTimer = setTimeout(dismissBanner, fullCard ? 8000 : 3000);
-  } else {
+    bannerTimer = setTimeout(dismissBanner, allMarked ? 8000 : 3000);
+  } else if (completed.length === 0) {
+    celebratedLines.clear();
     dismissBanner();
   }
 }
@@ -1382,6 +1410,8 @@ function deleteTeam(storageKey) {
   if (!data) return;
   if (!confirm(`Remove team "${data.name || '?'}"?`)) return;
   localStorage.removeItem(storageKey);
+  const saved = getCurrentTeam();
+  if (saved && storageKey === STORAGE_KEY_TEAM_PREFIX + saved.id) clearCurrentTeam();
   loadStats();
   showToast(`"${data.name}" removed`);
 }
@@ -1397,6 +1427,7 @@ function deleteAllTeams() {
   if (teams.length === 0) return;
   if (!confirm(`Remove ALL ${teams.length} teams? This cannot be undone.`)) return;
   teams.forEach(t => localStorage.removeItem(t.storageKey));
+  clearCurrentTeam();
   loadStats();
   showToast("All teams removed");
 }
@@ -1442,6 +1473,22 @@ function showToast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove("show"), 3200);
 }
+
+// ─── RESTORE SESSION ──────────────────────────────────────
+(function() {
+  const saved = getCurrentTeam();
+  if (saved && saved.id) {
+    const existing = getTeam(saved.id);
+    if (existing) {
+      teamName = saved.name;
+      teamId = saved.id;
+      initBingo();
+      showView("bingo");
+    } else {
+      clearCurrentTeam();
+    }
+  }
+})();
 </script>
 </body>
 </html>
